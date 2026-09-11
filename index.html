@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>QR 스캔 → MS Forms 전송</title>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12151A">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QR전송">
+<meta name="mobile-web-app-capable" content="yes">
+
+<style>
+  :root{
+    --ink:#12151A;
+    --ink-contrast:#fff;
+    --paper:#F6F3ED;
+    --card-bg:#fff;
+    --accent:#FF5A2A;
+    --accent-ink:#3A1200;
+    --ok:#2F9E44;
+    --line:#E3DED3;
+    --muted:#8A8371;
+    --muted-soft:#B4AD9C;
+    --muted-2:#5B5647;
+    --tab-track:#EDE8DC;
+    --order-accent:#1F3A5F;
+    --mono: 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Malgun Gothic", sans-serif;
+  }
+  html[data-theme="dark"]{
+    --ink:#EDE9E0;
+    --ink-contrast:#15171B;
+    --paper:#1B1D22;
+    --card-bg:#282A31;
+    --line:#3A3D45;
+    --muted:#9B9690;
+    --muted-soft:#6E7178;
+    --muted-2:#C9C4B8;
+    --tab-track:#33363D;
+    --order-accent:#5B9EE8;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%; overflow:hidden;
+    font-family:var(--sans); background:#000; color:var(--ink);
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{
+    display:flex; flex-direction:column;
+    height:100vh; height:100dvh;
+  }
+
+  /* ---------- 상단: 카메라 스캔 영역 ---------- */
+  #scan-section{
+    position:relative;
+    flex:0 0 38%;
+    background:#000;
+    overflow:hidden;
+  }
+  #reader{ width:100%; height:100%; }
+  #reader video{ width:100%!important; height:100%!important; object-fit:cover; }
+  /* html5-qrcode가 그리는 기본 UI 숨김 */
+  #reader img{ display:none!important; }
+  #reader__dashboard{ display:none!important; }
+
+  .frame-overlay{
+    position:absolute; inset:0; pointer-events:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .frame-box{
+    position:relative; width:62%; aspect-ratio:1/1; max-height:80%;
+  }
+  .frame-box .corner{
+    position:absolute; width:28px; height:28px;
+    border-color:#fff; transition:border-color .15s ease;
+  }
+  .frame-box.found .corner{ border-color:var(--ok); }
+  .corner.tl{ top:0; left:0; border-top:4px solid; border-left:4px solid; }
+  .corner.tr{ top:0; right:0; border-top:4px solid; border-right:4px solid; }
+  .corner.bl{ bottom:0; left:0; border-bottom:4px solid; border-left:4px solid; }
+  .corner.br{ bottom:0; right:0; border-bottom:4px solid; border-right:4px solid; }
+
+  .scan-hint{
+    position:absolute; top:10px; left:0; right:0;
+    text-align:center; color:#fff; font-size:12px; letter-spacing:.06em;
+    text-transform:uppercase; opacity:.75; font-weight:600;
+  }
+
+  #settings-btn{
+    position:absolute; top:10px; right:12px; z-index:10;
+    width:30px; height:30px; border-radius:50%; border:none;
+    background:rgba(255,255,255,.18); color:#fff; font-size:15px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+    text-shadow:0 1px 2px rgba(0,0,0,.5);
+  }
+
+  /* ---------- 하단: 입력 영역 ---------- */
+  #input-section{
+    flex:1 1 auto;
+    background:var(--paper);
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; gap:10px;
+  }
+
+  .label-row{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .label-row .label{ margin:0; }
+  #today-date{
+    font-size:12px; font-weight:600; color:var(--muted);
+    border:none; background:none; padding:2px 0; cursor:pointer;
+  }
+
+  .label{
+    font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 4px 2px;
+  }
+  .label.label-lg{
+    font-size:16px; font-weight:700; letter-spacing:0; text-transform:none;
+    color:var(--ink); margin:0 0 6px 2px;
+  }
+
+  #scanned-block{
+    position:sticky; top:0; z-index:5;
+    background:var(--paper);
+    padding-top:2px; padding-bottom:4px;
+  }
+
+  #scanned-card{
+    border:1.5px solid var(--line); background:var(--card-bg); border-radius:10px;
+    padding:10px 12px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  #scanned-card.filled{ border-color:var(--ok); background:#F1FAF3; }
+  #scanned-value{
+    font-family:var(--mono); font-size:15px; font-weight:600; color:var(--ink);
+    word-break:break-all; line-height:1.3;
+  }
+  #scanned-value.placeholder{ color:var(--muted-soft); font-family:var(--sans); font-weight:500; font-size:14px; }
+  #clear-scan{
+    flex:0 0 auto; border:none; background:none; color:var(--muted-soft); font-size:20px;
+    line-height:1; padding:4px 6px; cursor:pointer;
+  }
+  #scanned-card.filled #clear-scan{ color:#7CBE8A; }
+
+  #quantity-fields{ display:flex; flex-direction:column; gap:10px; }
+
+  .qty-group{ --group-accent: var(--ink); --group-bg: transparent; --group-label-color: var(--ink); }
+  .qty-group-header{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .qty-group-header .label{
+    margin:0; color:var(--group-label-color); background:var(--group-bg);
+    padding:4px 10px; border-radius:8px;
+  }
+
+  .tab-switch{ flex:0 0 auto; display:flex; gap:4px; background:var(--tab-track); border-radius:999px; padding:4px; }
+  .tab-btn{
+    border:none; background:transparent; color:var(--muted); font-size:16px; font-weight:700;
+    padding:6px 14px; border-radius:999px; cursor:pointer; white-space:nowrap;
+  }
+  .tab-btn.active{ background:var(--group-accent); color:var(--ink-contrast); }
+
+  .group-arrow{
+    display:flex; justify-content:center; align-items:center;
+    color:var(--ink); opacity:.4; margin:-3px 0;
+  }
+  .group-arrow svg{ display:block; }
+
+  .buttons-row{
+    display:flex; gap:7px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+    padding:2px 2px 4px;
+  }
+  .quick-btn{
+    flex:0 0 auto; width:42px; height:42px; padding:0;
+    border:1.5px solid var(--line); background:var(--card-bg); color:var(--ink);
+    border-radius:50%; font-size:15px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none;
+  }
+  .quick-btn.selected{ background:var(--ink); border-color:var(--ink); color:var(--ink-contrast); }
+
+  #text-input{
+    width:100%; border:1.5px solid var(--line); background:var(--card-bg); border-radius:10px;
+    padding:10px 12px; font-size:15px; font-family:var(--sans); color:var(--ink);
+  }
+  #text-input:focus{ outline:none; border-color:var(--ink); }
+
+  .spacer{ flex:1 1 auto; }
+
+  #action-row{ display:flex; gap:8px; }
+
+  #submit-btn{
+    flex:1 1 auto; border:none; border-radius:12px;
+    background:var(--accent); color:#fff; font-size:16px; font-weight:700;
+    padding:13px; cursor:pointer; letter-spacing:.01em;
+    transition:opacity .15s ease, transform .1s ease;
+  }
+  #submit-btn:active{ transform:scale(.98); }
+  #submit-btn:disabled{ background:#D8D2C4; color:#A39C89; cursor:not-allowed; }
+
+  #rescan-btn{
+    flex:0 0 110px; border:1.5px solid var(--line); background:transparent;
+    color:var(--ink); font-size:14px; font-weight:600; padding:9px 6px; border-radius:12px;
+    cursor:pointer;
+  }
+
+  #toast{
+    position:fixed; left:16px; right:16px; bottom:calc(16px + env(safe-area-inset-bottom));
+    background:#12151A; color:#fff; padding:12px 16px; border-radius:10px;
+    font-size:14px; text-align:center; opacity:0; pointer-events:none;
+    transform:translateY(8px); transition:opacity .2s ease, transform .2s ease;
+    z-index:50;
+  }
+  #toast.show{ opacity:1; transform:translateY(0); }
+
+  #config-warning{
+    display:none; background:#FFF1E8; border:1.5px solid var(--accent); color:var(--accent-ink);
+    border-radius:10px; padding:10px 12px; font-size:12.5px; line-height:1.5;
+  }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(18,21,26,.55);
+    display:none; align-items:center; justify-content:center; z-index:200; padding:24px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-card{
+    background:var(--card-bg); border-radius:14px; padding:22px 20px; max-width:320px; width:100%;
+    text-align:center;
+  }
+  .modal-title{ font-size:16px; font-weight:700; color:var(--ink); margin-bottom:8px; }
+  .modal-body{ font-size:14px; color:var(--muted-2); line-height:1.5; margin-bottom:18px; }
+  .device-id-box{
+    font-family:var(--mono); font-size:14px; font-weight:700; color:var(--ink);
+    border:1.5px solid var(--line); border-radius:10px; padding:10px 12px;
+    margin-bottom:14px; word-break:break-all; background:var(--paper); cursor:pointer;
+  }
+  .settings-row{ display:flex; align-items:center; justify-content:space-between; margin:16px 0; }
+  .settings-row-label{ font-size:15px; font-weight:600; color:var(--ink); }
+  .switch{ position:relative; display:inline-block; width:46px; height:26px; flex:0 0 auto; }
+  .switch input{ position:absolute; opacity:0; width:0; height:0; }
+  .switch-slider{
+    position:absolute; inset:0; background:var(--line); cursor:pointer;
+    transition:.2s; border-radius:999px;
+  }
+  .switch-slider::before{
+    content:""; position:absolute; height:20px; width:20px; left:3px; bottom:3px;
+    background:#fff; transition:.2s; border-radius:50%;
+  }
+  .switch input:checked + .switch-slider{ background:var(--accent); }
+  .switch input:checked + .switch-slider::before{ transform:translateX(20px); }
+  .modal-confirm-btn{
+    width:100%; border:none; border-radius:10px; background:var(--accent); color:#fff;
+    font-size:15px; font-weight:700; padding:12px; cursor:pointer;
+  }
+
+  .history-card{ max-width:340px; max-height:80vh; display:flex; flex-direction:column; }
+  #history-list{ overflow-y:auto; max-height:50vh; margin:4px 0 16px; text-align:left; }
+  .history-item{
+    padding:10px 0; border-bottom:1px solid var(--line);
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .history-item:last-child{ border-bottom:none; }
+  .history-time{
+    flex:0 0 auto; font-family:var(--mono); font-size:13px; font-weight:700;
+    color:var(--ink); padding-top:1px;
+  }
+  .history-detail{ flex:1 1 auto; font-size:13px; color:var(--muted-2); line-height:1.5; word-break:break-all; }
+  .history-empty{ text-align:center; color:var(--muted); font-size:14px; padding:20px 0; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="scan-section">
+    <div id="reader"></div>
+    <div class="frame-overlay">
+      <div class="scan-hint">QR 코드를 프레임 안에 맞춰주세요</div>
+      <div class="frame-box" id="frame-box">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+      </div>
+    </div>
+    <button id="settings-btn" type="button" aria-label="설정">⚙</button>
+  </div>
+
+  <div id="input-section">
+
+    <div id="config-warning">
+      ⚠️ MS Forms 전송 URL이 아직 설정되지 않았습니다. index.html 상단의 <b>CONFIG.MS_FORMS_TEMPLATE_URL</b> 값을 README 안내에 따라 채워주세요.
+    </div>
+
+    <div id="scanned-block">
+      <div class="label-row">
+        <div class="label">스캔된 값</div>
+        <button id="today-date" type="button"></button>
+      </div>
+      <div id="scanned-card">
+        <span id="scanned-value" class="placeholder">QR 코드를 스캔하세요</span>
+        <button id="clear-scan" title="지우기">✕</button>
+      </div>
+    </div>
+
+    <div id="quantity-fields"></div>
+
+    <div>
+      <div class="label">비고 입력 (선택)</div>
+      <input id="text-input" type="text" placeholder="메모나 특이사항을 입력하세요" />
+    </div>
+
+    <div class="spacer"></div>
+
+    <div id="action-row">
+      <button id="rescan-btn" type="button">다시 스캔</button>
+      <button id="submit-btn" type="button" disabled>MS Forms로 전송</button>
+    </div>
+
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<div id="offline-modal" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-title">인터넷 연결 필요</div>
+    <div class="modal-body">인터넷에 연결되어 있지 않습니다.<br>인터넷이 되는 곳으로 이동한 후 확인을 눌러주세요.</div>
+    <button id="offline-modal-confirm" type="button" class="modal-confirm-btn">확인</button>
+  </div>
+</div>
+
+<div id="settings-modal" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-title">설정</div>
+    <div class="modal-body">기기 고유 번호는 전송 시 QR 스캔 값과 함께 전달되어 담당자(기기)를 구분하는 데 사용됩니다. 개인정보는 수집하지 않으며, 이 기기 안에서 자동으로 발급된 번호입니다.</div>
+    <div id="device-id-display" class="device-id-box" title="눌러서 복사"></div>
+    <div class="settings-row">
+      <span class="settings-row-label">다크 모드</span>
+      <label class="switch">
+        <input type="checkbox" id="dark-mode-toggle">
+        <span class="switch-slider"></span>
+      </label>
+    </div>
+    <button id="settings-close-btn" type="button" class="modal-confirm-btn">확인</button>
+  </div>
+</div>
+
+<div id="history-modal" class="modal-overlay">
+  <div class="modal-card history-card">
+    <div class="modal-title">오늘 전송 내역</div>
+    <div id="history-list"></div>
+    <button id="history-close-btn" type="button" class="modal-confirm-btn">닫기</button>
+  </div>
+</div>
+
+<script src="vendor/html5-qrcode.min.js"></script>
+<script>
+/* =========================================================
+   설정 (CONFIG) — 이 블록만 수정하면 됩니다
+   ========================================================= */
+const CONFIG = {
+  // 1) Microsoft Forms에서 "미리 채워진 링크(Get Pre-filled link)"로 생성한 URL을 붙여넣으세요.
+  //    링크를 만들 때 각 문항에는 아래 PLACEHOLDER 문자열을 그대로 입력해서 생성하면,
+  //    이 코드가 문항 파라미터명을 몰라도 문자열 치환만으로 값을 채울 수 있습니다.
+  MS_FORMS_TEMPLATE_URL: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=hTfGPKK40UG8RH2Kj_o9bnwRZnTmg9hAjZ0tvYsLBy9UOUlHNEJHVFM1MlpOSzMxUVU0ODZGS1RRUC4u&r4a28f38cdf1f41f99e4864aaa9ee2ba8=QR_VALUE_HERE&&rbd4498299293499181f6d7490da14e96=ORDER_QTY_HERE&rdd4db81f726a452abe98d4b79795b3db=RECOVERY_QTY_HERE",
+
+  PLACEHOLDER_QR: "QR_VALUE_HERE",
+  PLACEHOLDER_TEXT: "TEXT_VALUE_HERE",
+
+  // 2) 전송 후 MS Forms를 새 탭으로 열지(true), 현재 화면에서 이동할지(false) 선택.
+  OPEN_IN_NEW_TAB: true,
+
+  // 2-1) 안드로이드에서는 Chrome Custom Tab을 거치지 않고 실제 기본 브라우저로 강제 이동
+  //      (Chrome Custom Tab이 MS Forms를 데스크톱형 레이아웃으로 렌더링하는 문제 회피용)
+  FORCE_DEFAULT_BROWSER_ON_ANDROID: true,
+
+  // 3) 탭으로 묶어 하나의 입력 공간에서 여러 항목을 전환하며 입력받는 그룹.
+  //    각 tab의 값은 " / "로 이어붙여 하나의 MS Forms 문항(placeholder)에 전달됩니다.
+  //    예) Toner=3, Drum=5 선택 시 → "3 / 5" 로 전달 (비어있는 항목은 "0"으로 처리)
+  QUANTITY_TAB_GROUPS: [
+    {
+      key: "order",
+      label: "소모품 주문 수량",
+      placeholder: "ORDER_QTY_HERE",
+      accentColor: "var(--order-accent)",
+      labelColor: "#1F3A5F",
+      bgColor: "#E6ECF4",
+      tabs: [
+        { key: "tonerOrder", tabLabel: "Toner", max: 10 },
+        { key: "drumOrder", tabLabel: "Drum", max: 10 }
+      ]
+    },
+    {
+      key: "recovery",
+      label: "폐소모품 회수 수량",
+      placeholder: "RECOVERY_QTY_HERE",
+      accentColor: "var(--accent)",
+      labelColor: "var(--accent)",
+      bgColor: "#FFE9DE",
+      tabs: [
+        { key: "tonerRecovery", tabLabel: "Toner", max: 10 },
+        { key: "drumRecovery", tabLabel: "Drum", max: 10 }
+      ]
+    }
+  ],
+
+  // 4) 탭 없이 단독으로 표시되는 수량 항목 목록 (현재는 사용하는 항목 없음)
+  QUANTITY_FIELDS: [],
+
+  // 5) 위 수량 항목을 모두 선택해야 전송 버튼이 활성화되게 하려면 true
+  REQUIRE_ALL_QUANTITIES: false
+};
+/* ========================================================= */
+
+let scannedValue = "";
+const quantityState = {};
+let html5QrCode = null;
+let isPaused = false;
+let awaitingFormsReturn = false;
+
+const els = {
+  scannedValue: document.getElementById('scanned-value'),
+  scannedCard: document.getElementById('scanned-card'),
+  quantityFields: document.getElementById('quantity-fields'),
+  textInput: document.getElementById('text-input'),
+  submitBtn: document.getElementById('submit-btn'),
+  rescanBtn: document.getElementById('rescan-btn'),
+  clearScan: document.getElementById('clear-scan'),
+  frameBox: document.getElementById('frame-box'),
+  toast: document.getElementById('toast'),
+  configWarning: document.getElementById('config-warning'),
+  offlineModal: document.getElementById('offline-modal'),
+  offlineModalConfirm: document.getElementById('offline-modal-confirm'),
+  todayDate: document.getElementById('today-date'),
+  settingsBtn: document.getElementById('settings-btn'),
+  settingsModal: document.getElementById('settings-modal'),
+  deviceIdDisplay: document.getElementById('device-id-display'),
+  darkModeToggle: document.getElementById('dark-mode-toggle'),
+  settingsCloseBtn: document.getElementById('settings-close-btn'),
+  historyModal: document.getElementById('history-modal'),
+  historyList: document.getElementById('history-list'),
+  historyCloseBtn: document.getElementById('history-close-btn')
+};
+
+function showToast(msg, ms = 2200) {
+  els.toast.textContent = msg;
+  els.toast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => els.toast.classList.remove('show'), ms);
+}
+
+const HISTORY_KEY = 'qrMsforms.history';
+const DEVICE_ID_KEY = 'qrMsforms.deviceId';
+const THEME_KEY = 'qrMsforms.theme';
+
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (parsed.date !== todayKey()) return []; // 날짜가 바뀌면 새로 시작
+    return parsed.entries || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveHistory(entries) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify({ date: todayKey(), entries }));
+  } catch (e) {}
+}
+
+function buildHistorySummary() {
+  const parts = [];
+  CONFIG.QUANTITY_TAB_GROUPS.forEach((g) => {
+    const combined = g.tabs.map((t) => quantityState[t.key] || '0').join('/');
+    parts.push(`${g.label} ${combined}`);
+  });
+  CONFIG.QUANTITY_FIELDS.forEach((f) => {
+    parts.push(`${f.label} ${quantityState[f.key] || '0'}`);
+  });
+  return parts.join(' · ');
+}
+
+function recordHistoryEntry() {
+  const entries = loadHistory();
+  entries.push({
+    time: new Date().toISOString(),
+    qr: scannedValue,
+    summary: buildHistorySummary(),
+    note: els.textInput.value || ''
+  });
+  saveHistory(entries);
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function generateId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  // 구형 브라우저 대비 폴백 (crypto.randomUUID 미지원 시)
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = generateId();
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch (e) {
+    return '';
+  }
+}
+
+function getTheme() {
+  try { return localStorage.getItem(THEME_KEY) || 'light'; } catch (e) { return 'light'; }
+}
+
+function applyTheme(theme) {
+  if (theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#1B1D22' : '#12151A');
+}
+
+function setTheme(theme) {
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  applyTheme(theme);
+}
+
+function openSettingsModal() {
+  els.deviceIdDisplay.textContent = getDeviceId();
+  els.darkModeToggle.checked = (getTheme() === 'dark');
+  els.settingsModal.classList.add('show');
+}
+
+function closeSettingsModal() {
+  els.settingsModal.classList.remove('show');
+}
+
+function openHistoryModal() {
+  const entries = loadHistory();
+  els.historyList.innerHTML = "";
+  if (entries.length === 0) {
+    els.historyList.innerHTML = '<div class="history-empty">오늘 전송한 내역이 없습니다.</div>';
+  } else {
+    entries.slice().reverse().forEach((e) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      const noteHtml = e.note ? ` · ${escapeHtml(e.note)}` : '';
+      item.innerHTML = `<div class="history-time">${formatTime(e.time)}</div><div class="history-detail">${escapeHtml(e.qr)}<br>${escapeHtml(e.summary)}${noteHtml}</div>`;
+      els.historyList.appendChild(item);
+    });
+  }
+  els.historyModal.classList.add('show');
+}
+
+function closeHistoryModal() {
+  els.historyModal.classList.remove('show');
+}
+
+function renderTodayDate() {
+  const now = new Date();
+  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const count = loadHistory().length;
+  els.todayDate.textContent = `${m}.${d}(${days[now.getDay()]}) · 오늘 ${count}건`;
+}
+
+function renderTabGroup(group) {
+  group.tabs.forEach((t) => { quantityState[t.key] = ""; });
+  let activeIndex = 0;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'qty-group';
+  wrap.style.setProperty('--group-accent', group.accentColor || 'var(--ink)');
+  wrap.style.setProperty('--group-bg', group.bgColor || 'transparent');
+  wrap.style.setProperty('--group-label-color', group.labelColor || group.accentColor || 'var(--ink)');
+
+  const header = document.createElement('div');
+  header.className = 'qty-group-header';
+
+  const label = document.createElement('div');
+  label.className = 'label label-lg';
+  label.textContent = group.label;
+
+  const tabSwitch = document.createElement('div');
+  tabSwitch.className = 'tab-switch';
+
+  const row = document.createElement('div');
+  row.className = 'buttons-row';
+
+  function renderTabs() {
+    tabSwitch.innerHTML = "";
+    group.tabs.forEach((t, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tab-btn' + (idx === activeIndex ? ' active' : '');
+      btn.textContent = quantityState[t.key] ? `${t.tabLabel} · ${quantityState[t.key]}` : t.tabLabel;
+      btn.addEventListener('click', () => {
+        activeIndex = idx;
+        renderTabs();
+        renderRow();
+      });
+      tabSwitch.appendChild(btn);
+    });
+  }
+
+  function renderRow() {
+    const tab = group.tabs[activeIndex];
+    row.innerHTML = "";
+    const max = tab.max || 10;
+    for (let i = 1; i <= max; i++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'quick-btn';
+      btn.textContent = i;
+      if (quantityState[tab.key] === String(i)) btn.classList.add('selected');
+      btn.addEventListener('click', () => {
+        const val = String(i);
+        quantityState[tab.key] = (quantityState[tab.key] === val) ? "" : val;
+        renderTabs();
+        renderRow();
+        updateSubmitState();
+      });
+      row.appendChild(btn);
+    }
+  }
+
+  renderTabs();
+  renderRow();
+
+  header.appendChild(label);
+  header.appendChild(tabSwitch);
+  wrap.appendChild(header);
+  wrap.appendChild(row);
+  els.quantityFields.appendChild(wrap);
+}
+
+function renderSingleField(field) {
+  quantityState[field.key] = "";
+
+  const block = document.createElement('div');
+  const label = document.createElement('div');
+  label.className = 'label label-lg';
+  label.textContent = field.label;
+
+  const row = document.createElement('div');
+  row.className = 'buttons-row';
+
+  const max = field.max || 10;
+  for (let i = 1; i <= max; i++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'quick-btn';
+    btn.textContent = i;
+    btn.addEventListener('click', () => {
+      const val = String(i);
+      const isSame = quantityState[field.key] === val;
+      quantityState[field.key] = isSame ? "" : val;
+      [...row.children].forEach((c, idx) => c.classList.toggle('selected', !isSame && idx + 1 === i));
+      updateSubmitState();
+    });
+    row.appendChild(btn);
+  }
+
+  block.appendChild(label);
+  block.appendChild(row);
+  els.quantityFields.appendChild(block);
+}
+
+function renderQuantityFields() {
+  els.quantityFields.innerHTML = "";
+  CONFIG.QUANTITY_TAB_GROUPS.forEach((group, idx) => {
+    renderTabGroup(group);
+    if (idx < CONFIG.QUANTITY_TAB_GROUPS.length - 1) {
+      const arrow = document.createElement('div');
+      arrow.className = 'group-arrow';
+      arrow.innerHTML = '<svg width="48" height="14" viewBox="0 0 48 14" xmlns="http://www.w3.org/2000/svg"><polygon points="2,2 46,2 24,12" fill="currentColor"/></svg>';
+      els.quantityFields.appendChild(arrow);
+    }
+  });
+  CONFIG.QUANTITY_FIELDS.forEach((field) => renderSingleField(field));
+}
+
+function allQuantityKeys() {
+  const keys = CONFIG.QUANTITY_FIELDS.map((f) => f.key);
+  CONFIG.QUANTITY_TAB_GROUPS.forEach((g) => g.tabs.forEach((t) => keys.push(t.key)));
+  return keys;
+}
+
+function updateSubmitState() {
+  const hasScan = !!scannedValue;
+  const quantitiesOk = !CONFIG.REQUIRE_ALL_QUANTITIES ||
+    allQuantityKeys().every((k) => !!quantityState[k]);
+  els.submitBtn.disabled = !(hasScan && quantitiesOk);
+}
+
+function onScanSuccess(decodedText) {
+  if (decodedText === scannedValue) return; // 동일 코드 중복 무시
+  scannedValue = decodedText;
+  els.scannedValue.textContent = decodedText;
+  els.scannedValue.classList.remove('placeholder');
+  els.scannedCard.classList.add('filled');
+  els.frameBox.classList.add('found');
+  if (navigator.vibrate) navigator.vibrate(80);
+  updateSubmitState();
+  pauseScanner();
+}
+
+function resetScanState() {
+  scannedValue = "";
+  els.scannedValue.textContent = "QR 코드를 스캔하세요";
+  els.scannedValue.classList.add('placeholder');
+  els.scannedCard.classList.remove('filled');
+  els.frameBox.classList.remove('found');
+  els.textInput.value = "";
+  renderQuantityFields();
+  updateSubmitState();
+}
+
+function pauseScanner() {
+  if (html5QrCode && !isPaused) {
+    try { html5QrCode.pause(true); isPaused = true; } catch (e) {}
+  }
+}
+
+function resumeScanner() {
+  if (html5QrCode && isPaused) {
+    try { html5QrCode.resume(); isPaused = false; } catch (e) {}
+  }
+}
+
+function startScanner() {
+  html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+    onScanSuccess,
+    () => { /* 프레임마다 발생하는 인식 실패는 무시 */ }
+  ).catch((err) => {
+    showToast("카메라를 시작할 수 없습니다. 권한을 확인해주세요.", 4000);
+    console.error(err);
+  });
+}
+
+function buildFormsUrl() {
+  const textVal = els.textInput.value || "";
+  const deviceId = getDeviceId();
+  const qrCombined = deviceId ? `${scannedValue} / ${deviceId}` : scannedValue;
+
+  let url = CONFIG.MS_FORMS_TEMPLATE_URL;
+  url = url.split(CONFIG.PLACEHOLDER_QR).join(encodeURIComponent(qrCombined));
+
+  CONFIG.QUANTITY_FIELDS.forEach((f) => {
+    url = url.split(f.placeholder).join(encodeURIComponent(quantityState[f.key] || ""));
+  });
+
+  CONFIG.QUANTITY_TAB_GROUPS.forEach((g) => {
+    const combined = g.tabs.map((t) => quantityState[t.key] || "0").join(" / ");
+    url = url.split(g.placeholder).join(encodeURIComponent(combined));
+  });
+
+  url = url.split(CONFIG.PLACEHOLDER_TEXT).join(encodeURIComponent(textVal));
+  return url;
+}
+
+function isAndroid() {
+  return /Android/i.test(navigator.userAgent);
+}
+
+function buildAndroidIntentUrl(httpsUrl) {
+  const withoutScheme = httpsUrl.replace(/^https:\/\//, '');
+  return 'intent://' + withoutScheme + '#Intent;scheme=https;action=android.intent.action.VIEW;end';
+}
+
+function isOnline() {
+  return navigator.onLine;
+}
+
+function showOfflineModal() {
+  els.offlineModal.classList.add('show');
+}
+
+function hideOfflineModal() {
+  els.offlineModal.classList.remove('show');
+}
+
+function proceedToForms() {
+  const url = buildFormsUrl();
+  recordHistoryEntry();
+  awaitingFormsReturn = true;
+
+//  if (CONFIG.FORCE_DEFAULT_BROWSER_ON_ANDROID && isAndroid()) {
+//    window.location.href = buildAndroidIntentUrl(url);
+//  } else if (CONFIG.OPEN_IN_NEW_TAB) {
+  if (CONFIG.OPEN_IN_NEW_TAB) {
+    window.open(url, '_blank');
+  } else {
+    window.location.href = url;
+  }
+
+  showToast("전송되었습니다. 폼 화면에서 제출을 눌러주세요.");
+  resetScanState();
+  resumeScanner();
+  renderTodayDate();
+}
+
+function handleSubmit() {
+  if (!scannedValue) return;
+  if (!CONFIG.MS_FORMS_TEMPLATE_URL) {
+    showToast("MS Forms URL이 설정되지 않았습니다 (README 참고)", 3500);
+    return;
+  }
+  if (!isOnline()) {
+    showOfflineModal();
+    return;
+  }
+  proceedToForms();
+}
+
+els.submitBtn.addEventListener('click', handleSubmit);
+els.rescanBtn.addEventListener('click', () => { resetScanState(); resumeScanner(); });
+els.clearScan.addEventListener('click', () => { resetScanState(); resumeScanner(); });
+
+els.offlineModalConfirm.addEventListener('click', () => {
+  if (!isOnline()) {
+    showToast("아직 인터넷에 연결되어 있지 않습니다.", 2000);
+    return;
+  }
+  hideOfflineModal();
+  proceedToForms();
+});
+
+els.settingsBtn.addEventListener('click', openSettingsModal);
+els.settingsCloseBtn.addEventListener('click', closeSettingsModal);
+els.deviceIdDisplay.addEventListener('click', () => {
+  const id = getDeviceId();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(id).then(() => showToast('복사되었습니다.'));
+  }
+});
+els.darkModeToggle.addEventListener('change', () => {
+  setTheme(els.darkModeToggle.checked ? 'dark' : 'light');
+});
+els.settingsModal.addEventListener('click', (e) => {
+  if (e.target === els.settingsModal) closeSettingsModal();
+});
+
+els.todayDate.addEventListener('click', openHistoryModal);
+els.historyCloseBtn.addEventListener('click', closeHistoryModal);
+els.historyModal.addEventListener('click', (e) => {
+  if (e.target === els.historyModal) closeHistoryModal();
+});
+
+// MS Forms로 이동했다가 돌아왔을 때(탭 전환/뒤로가기 등 어떤 경로든) 반드시 초기화되도록
+// proceedToForms()에서 세팅하는 플래그를 여기서 확인합니다.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    resumeScanner();
+    if (awaitingFormsReturn) {
+      awaitingFormsReturn = false;
+      resetScanState();
+      renderTodayDate();
+    }
+  }
+});
+
+// location.href로 이동했다가 브라우저 "뒤로가기"로 돌아온 경우(bfcache 복원) 대비
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    awaitingFormsReturn = false;
+    resetScanState();
+    resumeScanner();
+    renderTodayDate();
+  }
+});
+
+applyTheme(getTheme());
+
+window.addEventListener('load', () => {
+  if (!CONFIG.MS_FORMS_TEMPLATE_URL) {
+    els.configWarning.style.display = 'block';
+  }
+  renderTodayDate();
+  setInterval(renderTodayDate, 60000);
+  renderQuantityFields();
+  updateSubmitState();
+  startScanner();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+});
+</script>
+</body>
+</html>
