@@ -71,6 +71,7 @@
   /* html5-qrcode가 그리는 기본 UI 숨김 */
   #reader img{ display:none!important; }
   #reader__dashboard{ display:none!important; }
+  #qr-shaded-region{ display:none!important; }
 
   .frame-overlay{
     position:absolute; inset:0; pointer-events:none;
@@ -89,10 +90,10 @@
     border-color:#fff; transition:border-color .15s ease;
   }
   .frame-box.found .corner{ border-color:var(--ok); }
-  .corner.tl{ top:0; left:0; border-top:4px solid; border-left:4px solid; }
-  .corner.tr{ top:0; right:0; border-top:4px solid; border-right:4px solid; }
-  .corner.bl{ bottom:0; left:0; border-bottom:4px solid; border-left:4px solid; }
-  .corner.br{ bottom:0; right:0; border-bottom:4px solid; border-right:4px solid; }
+  .corner.tl{ top:0; left:0; border-top:4px solid #fff; border-left:4px solid #fff; }
+  .corner.tr{ top:0; right:0; border-top:4px solid #fff; border-right:4px solid #fff; }
+  .corner.bl{ bottom:0; left:0; border-bottom:4px solid #fff; border-left:4px solid #fff; }
+  .corner.br{ bottom:0; right:0; border-bottom:4px solid #fff; border-right:4px solid #fff; }
 
   .scan-hint{
     flex:0 0 auto;
@@ -376,7 +377,7 @@ const CONFIG = {
   // 1) Microsoft Forms에서 "미리 채워진 링크(Get Pre-filled link)"로 생성한 URL을 붙여넣으세요.
   //    링크를 만들 때 각 문항에는 아래 PLACEHOLDER 문자열을 그대로 입력해서 생성하면,
   //    이 코드가 문항 파라미터명을 몰라도 문자열 치환만으로 값을 채울 수 있습니다.
-  MS_FORMS_TEMPLATE_URL: "https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=ECpZksKL6kWIDvYroW1G7bdtDGOGyUVOqnCMz0REEn5UQk5PUk5PNllDU1pUU0JTVDJJVFNaUVU5Ni4u&r370f670073d14c4c928438eea49b2ea8=QR_VALUE_HERE&r4ad7ae0d8abe4bd093b1ba33b5c411d7=ORDER_QTY_HERE&r350697f9135c419b9999a5c040eeeef4=RECOVERY_QTY_HERE",
+  MS_FORMS_TEMPLATE_URL: "",
 
   PLACEHOLDER_QR: "QR_VALUE_HERE",
   PLACEHOLDER_TEXT: "TEXT_VALUE_HERE",
@@ -776,7 +777,6 @@ function resumeScanner() {
 
 function startScanner() {
   html5QrCode = new Html5Qrcode("reader");
-
   html5QrCode.start(
     { facingMode: "environment" },
     { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
