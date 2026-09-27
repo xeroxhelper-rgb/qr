@@ -85,7 +85,7 @@
     position:relative; width:62%; aspect-ratio:1/1; max-height:92%;
   }
   .frame-box .corner{
-    position:absolute; width:18px; height:18px;
+    position:absolute; width:28px; height:28px;
     border-color:#fff; transition:border-color .15s ease;
   }
   .frame-box.found .corner{ border-color:var(--ok); }
@@ -777,11 +777,9 @@ function resumeScanner() {
 function startScanner() {
   html5QrCode = new Html5Qrcode("reader");
 
-  const boxSize = Math.floor(window.innerWidth * 0.62); // 화면 너비의 62% 계산
-
   html5QrCode.start(
     { facingMode: "environment" },
-    { fps: 10, qrbox: { width: boxSize, height: boxSize }, aspectRatio: 1.0 },
+    { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
     onScanSuccess,
     () => { /* 프레임마다 발생하는 인식 실패는 무시 */ }
   ).catch((err) => {
