@@ -400,8 +400,8 @@ const CONFIG = {
   FORCE_DEFAULT_BROWSER_ON_ANDROID: true,
 
   // 3) 탭으로 묶어 하나의 입력 공간에서 여러 항목을 전환하며 입력받는 그룹.
-  //    각 tab의 값은 " / "로 이어붙여 하나의 MS Forms 문항(placeholder)에 전달됩니다.
-  //    예) Toner=3, Drum=5 선택 시 → "3 / 5" 로 전달 (비어있는 항목은 "0"으로 처리)
+  //    각 tab의 값은 "/"로 이어붙여 하나의 MS Forms 문항(placeholder)에 전달됩니다.
+  //    예) Toner=3, Drum=5 선택 시 → "3/5" 로 전달 (비어있는 항목은 "0"으로 처리)
   QUANTITY_TAB_GROUPS: [
     {
       key: "order",
@@ -860,7 +860,7 @@ function buildFormsUrl() {
   });
 
   CONFIG.QUANTITY_TAB_GROUPS.forEach((g) => {
-    const combined = g.tabs.map((t) => quantityState[t.key] || "0").join(" / ");
+    const combined = g.tabs.map((t) => quantityState[t.key] || "0").join("/");
     url = url.split(g.placeholder).join(encodeURIComponent(combined));
   });
 
