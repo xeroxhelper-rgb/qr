@@ -90,7 +90,14 @@
     border-color:#fff; transition:border-color .15s ease;
   }
   .frame-box.found .corner{ border-color:var(--ok); }
-  .frame-box.invalid .corner{ border-color:#FF4D7D; }
+  .frame-box.invalid .corner{ border-color:#FF4D7D; animation:corner-blink .5s ease-in-out infinite; }
+  @keyframes corner-blink{
+    0%, 100%{ opacity:1; }
+    50%{ opacity:.15; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .frame-box.invalid .corner{ animation:none; }
+  }
 
   .scan-error{
     position:absolute; left:0; right:0; bottom:22%;
