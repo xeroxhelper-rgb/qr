@@ -432,6 +432,7 @@ const quantityState = {};
 let html5QrCode = null;
 let isPaused = false;
 let awaitingFormsReturn = false;
+let lastInvalidValue = "";
 
 const els = {
   scannedValue: document.getElementById('scanned-value'),
@@ -740,7 +741,29 @@ function updateSubmitState() {
   els.submitBtn.disabled = !(hasScan && quantitiesOk);
 }
 
+function isValidScanValue(value) {
+  if (!value) return false;
+  if (/^https?:\/\//i.test(value)) return false; // URL 형태는 무효
+  const parts = value.split('/');
+  if (parts.length !== 4) return false;
+  const [custNo, custName, model, machineNo] = parts;
+  if (!/^[A-Za-z0-9]{9}$/.test(custNo)) return false;        // 고객번호: 영문+숫자 9자리
+  if (!custName || !custName.trim()) return false;            // 고객명: 비어있지 않아야 함
+  if (!/^[A-Za-z0-9]+$/.test(model)) return false;             // 기종: 영문+숫자
+  if (!/^[A-Za-z0-9]+$/.test(machineNo)) return false;         // 기계번호: 영문+숫자
+  return true;
+}
+
 function onScanSuccess(decodedText) {
+  if (!isValidScanValue(decodedText)) {
+    if (decodedText !== lastInvalidValue) {
+      lastInvalidValue = decodedText;
+      if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+      showToast('인식할 수 없는 QR 코드입니다. 소모품 라벨의 QR을 스캔해주세요.', 2500);
+    }
+    return; // 스캔값에 반영하지 않고 카메라는 계속 스캔
+  }
+  lastInvalidValue = "";
   if (decodedText === scannedValue) return; // 동일 코드 중복 무시
   scannedValue = decodedText;
   els.scannedValue.textContent = decodedText;
@@ -754,6 +777,7 @@ function onScanSuccess(decodedText) {
 
 function resetScanState() {
   scannedValue = "";
+  lastInvalidValue = "";
   els.scannedValue.textContent = "QR 코드를 스캔하세요";
   els.scannedValue.classList.add('placeholder');
   els.scannedCard.classList.remove('filled');
@@ -789,9 +813,12 @@ function startScanner() {
 }
 
 function buildFormsUrl() {
-  const textVal = els.textInput.value || "";
+  const textVal = (els.textInput.value || "").trim();
   const deviceId = getDeviceId();
-  const qrCombined = deviceId ? `${scannedValue} / ${deviceId}` : scannedValue;
+
+  let qrCombined = scannedValue;
+  if (deviceId) qrCombined += `/${deviceId}`;
+  if (textVal) qrCombined += `/${textVal}`;
 
   let url = CONFIG.MS_FORMS_TEMPLATE_URL;
   url = url.split(CONFIG.PLACEHOLDER_QR).join(encodeURIComponent(qrCombined));
