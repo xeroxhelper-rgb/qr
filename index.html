@@ -90,6 +90,15 @@
     border-color:#fff; transition:border-color .15s ease;
   }
   .frame-box.found .corner{ border-color:var(--ok); }
+  .frame-box.invalid .corner{ border-color:#FF4D7D; }
+
+  .scan-error{
+    position:absolute; left:0; right:0; bottom:22%;
+    text-align:center; color:#fff; font-size:15px; font-weight:700;
+    text-shadow:0 0 6px rgba(255,77,125,.95), 0 1px 3px rgba(0,0,0,.85);
+    opacity:0; transition:opacity .15s ease; pointer-events:none;
+  }
+  .scan-error.show{ opacity:1; }
   .corner.tl{ top:0; left:0; border-top:4px solid #fff; border-left:4px solid #fff; }
   .corner.tr{ top:0; right:0; border-top:4px solid #fff; border-right:4px solid #fff; }
   .corner.bl{ bottom:0; left:0; border-bottom:4px solid #fff; border-left:4px solid #fff; }
@@ -295,6 +304,7 @@
           <div class="corner bl"></div><div class="corner br"></div>
         </div>
       </div>
+      <div class="scan-error" id="scan-error">인식할 수 없는 QR Code입니다!</div>
     </div>
     <button id="settings-btn" type="button" aria-label="설정">⚙</button>
   </div>
@@ -443,6 +453,7 @@ const els = {
   rescanBtn: document.getElementById('rescan-btn'),
   clearScan: document.getElementById('clear-scan'),
   frameBox: document.getElementById('frame-box'),
+  scanError: document.getElementById('scan-error'),
   toast: document.getElementById('toast'),
   configWarning: document.getElementById('config-warning'),
   offlineModal: document.getElementById('offline-modal'),
@@ -754,16 +765,36 @@ function isValidScanValue(value) {
   return true;
 }
 
+let invalidTimer = null;
+
+function showInvalidScan() {
+  els.frameBox.classList.add('invalid');
+  els.scanError.classList.add('show');
+  // 잘못된 QR이 계속 비춰지는 동안은 유지하고, 사라지면 1.5초 뒤 원래대로 복귀
+  clearTimeout(invalidTimer);
+  invalidTimer = setTimeout(() => {
+    clearInvalidScan();
+    lastInvalidValue = "";
+  }, 1500);
+}
+
+function clearInvalidScan() {
+  clearTimeout(invalidTimer);
+  els.frameBox.classList.remove('invalid');
+  els.scanError.classList.remove('show');
+}
+
 function onScanSuccess(decodedText) {
   if (!isValidScanValue(decodedText)) {
     if (decodedText !== lastInvalidValue) {
       lastInvalidValue = decodedText;
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
-      showToast('인식할 수 없는 QR 코드입니다. 소모품 라벨의 QR을 스캔해주세요.', 2500);
     }
+    showInvalidScan();
     return; // 스캔값에 반영하지 않고 카메라는 계속 스캔
   }
   lastInvalidValue = "";
+  clearInvalidScan();
   if (decodedText === scannedValue) return; // 동일 코드 중복 무시
   scannedValue = decodedText;
   els.scannedValue.textContent = decodedText;
@@ -778,6 +809,7 @@ function onScanSuccess(decodedText) {
 function resetScanState() {
   scannedValue = "";
   lastInvalidValue = "";
+  clearInvalidScan();
   els.scannedValue.textContent = "QR 코드를 스캔하세요";
   els.scannedValue.classList.add('placeholder');
   els.scannedCard.classList.remove('filled');
